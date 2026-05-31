@@ -10,7 +10,9 @@ Write-Host " - Close Steam if it's running" -ForegroundColor White
 Write-Host " - Remove your current Millennium install" -ForegroundColor White
 Write-Host " - Ask you to reinstall Millennium from the official installer" -ForegroundColor White
 Write-Host " - Download and install LuaTools into Millennium" -ForegroundColor White
+Write-Host " - Restart Steam at the end" -ForegroundColor White
 Write-Host ""
+
 $confirm = Read-Host "Are you sure you want to proceed? There is no going back automatically. (y/n)"
 
 if ($confirm.ToLower() -ne "y") {
@@ -19,22 +21,28 @@ if ($confirm.ToLower() -ne "y") {
 }
 
 $steamPath = "C:\Program Files (x86)\Steam"
+$steamExe  = Join-Path $steamPath "steam.exe"
 $millenniumPath = "$steamPath\millennium"
 $pluginsPath = "$millenniumPath\plugins"
 $luatoolsRarUrl = "https://github.com/Mario64MUI/MUI-Files/releases/download/v2.7.3/luatools.rar"
 $tempRar = "$env:TEMP\luatools.rar"
 
-Write-Host "`n[1/6] Checking Steam installation..." -ForegroundColor Yellow
+Write-Host "`n[1/7] Checking Steam installation..." -ForegroundColor Yellow
 
 if (-not (Test-Path $steamPath)) {
     Write-Error "Steam not found at $steamPath. Make sure Steam is installed."
     exit 1
 }
 
-Write-Host "`n[2/6] Stopping Steam..." -ForegroundColor Yellow
+if (-not (Test-Path $steamExe)) {
+    Write-Error "steam.exe not found at $steamExe. Make sure Steam is installed correctly."
+    exit 1
+}
+
+Write-Host "`n[2/7] Stopping Steam..." -ForegroundColor Yellow
 Get-Process -Name "Steam" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
 
-Write-Host "`n[3/6] Removing old Millennium..." -ForegroundColor Yellow
+Write-Host "`n[3/7] Removing old Millennium..." -ForegroundColor Yellow
 
 if (Test-Path $millenniumPath) {
     Write-Host "Removing Millennium folder..." -ForegroundColor Gray
@@ -44,21 +52,30 @@ if (Test-Path $millenniumPath) {
     Write-Host "No existing Millennium found, skipping removal." -ForegroundColor Gray
 }
 
-Write-Host "`n[4/6] Installing fresh Millennium..." -ForegroundColor Yellow
+Write-Host "`n[4/7] Installing fresh Millennium..." -ForegroundColor Yellow
 
 $installerUrl = "https://docs.steambrew.app/users/getting-started/installation"
 Write-Host "Open the Millennium installer manually and complete the install:" -ForegroundColor Cyan
 Write-Host "  $installerUrl" -ForegroundColor White
-Write-Host "`nClick 'Install' and finish the setup, then press ENTER here to continue..." -ForegroundColor Cyan
+Write-Host "`nMake sure you click 'Install' and let it finish completely." -ForegroundColor White
+Write-Host "When the installer is done, press ENTER here to continue..." -ForegroundColor Cyan
 Read-Host
 
-if (-not (Test-Path $pluginsPath)) {
-    Write-Error "Millennium plugins folder not found at $pluginsPath.`nMake sure you completed the Millennium install."
+# Check Millennium folder exists
+if (-not (Test-Path $millenniumPath)) {
+    Write-Error "Millennium folder not found at $millenniumPath.`nMake sure you completed the Millennium install."
     exit 1
 }
+
+# Ensure plugins folder exists
+if (-not (Test-Path $pluginsPath)) {
+    Write-Host "Plugins folder not found at $pluginsPath, creating it..." -ForegroundColor Yellow
+    New-Item -ItemType Directory -Path $pluginsPath | Out-Null
+}
+
 Write-Host "Millennium installed successfully." -ForegroundColor Green
 
-Write-Host "`n[5/6] Downloading LuaTools..." -ForegroundColor Yellow
+Write-Host "`n[5/7] Downloading LuaTools..." -ForegroundColor Yellow
 
 try {
     Invoke-WebRequest -Uri $luatoolsRarUrl -OutFile $tempRar -UseBasicParsing
@@ -68,7 +85,7 @@ try {
     exit 1
 }
 
-Write-Host "`n[6/6] Extracting LuaTools to plugins folder..." -ForegroundColor Yellow
+Write-Host "`n[6/7] Extracting LuaTools to plugins folder..." -ForegroundColor Yellow
 
 $luatoolsDir = "$pluginsPath\luatools"
 
@@ -98,10 +115,18 @@ Write-Host "LuaTools extracted to: $luatoolsDir" -ForegroundColor Green
 
 Remove-Item $tempRar -ErrorAction SilentlyContinue
 
+Write-Host "`n[7/7] Restarting Steam..." -ForegroundColor Yellow
+
+try {
+    Start-Process -FilePath $steamExe
+    Write-Host "Steam started successfully." -ForegroundColor Green
+} catch {
+    Write-Host "Could not auto-start Steam. Start it manually if needed." -ForegroundColor Red
+}
+
 Write-Host "`n=== Installation Complete ===" -ForegroundColor Green
 Write-Host "`nNext steps:" -ForegroundColor Cyan
-Write-Host "1. Reopen Steam." -ForegroundColor White
-Write-Host "2. Go to: Steam → Millennium → Plugins." -ForegroundColor White
-Write-Host "3. Enable/check 'LuaTools' and click 'Save Changes'." -ForegroundColor White
+Write-Host "1. When Steam opens, go to: Steam → Millennium → Plugins." -ForegroundColor White
+Write-Host "2. Enable/check 'LuaTools' and click 'Save Changes'." -ForegroundColor White
 Write-Host "`nIf LuaTools doesn't show up, make sure the 'luatools' folder is directly inside 'plugins' and restart Steam again." -ForegroundColor Yellow
 Write-Host "`nYou're done. You can now use Millennium and LuaTools like before." -ForegroundColor Green
