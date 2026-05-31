@@ -1,6 +1,6 @@
 # Millennium + LuaTools Auto-Installer (MUI)
 # Hosted on GitHub, runnable via:
-# irm "https://raw.githubusercontent.com/Mario64MUI/MUI-Files/main/scripts/install-millennium-luatools.ps1" | iex
+# irm "https://raw.githubusercontent.com/Mario64MUI/MUI-Files/refs/heads/main/scripts/install-millennium-luatools.ps1" | iex
 
 $ErrorActionPreference = "Stop"
 
@@ -8,7 +8,7 @@ Write-Host "=== Millennium + LuaTools Auto-Installer (MUI) ===" -ForegroundColor
 Write-Host "This will:" -ForegroundColor Yellow
 Write-Host " - Close Steam if it's running" -ForegroundColor White
 Write-Host " - Remove your current Millennium install" -ForegroundColor White
-Write-Host " - Ask you to reinstall Millennium from the official installer" -ForegroundColor White
+Write-Host " - Automatically install Millennium via the official Steambrew script" -ForegroundColor White
 Write-Host " - Download and install LuaTools into Millennium" -ForegroundColor White
 Write-Host " - Restart Steam at the end" -ForegroundColor White
 Write-Host ""
@@ -52,18 +52,19 @@ if (Test-Path $millenniumPath) {
     Write-Host "No existing Millennium found, skipping removal." -ForegroundColor Gray
 }
 
-Write-Host "`n[4/7] Installing fresh Millennium..." -ForegroundColor Yellow
+Write-Host "`n[4/7] Installing fresh Millennium automatically..." -ForegroundColor Yellow
+Write-Host "Using official Steambrew installer: https://steambrew.app/install.ps1" -ForegroundColor Cyan
 
-$installerUrl = "https://docs.steambrew.app/users/getting-started/installation"
-Write-Host "Open the Millennium installer manually and complete the install:" -ForegroundColor Cyan
-Write-Host "  $installerUrl" -ForegroundColor White
-Write-Host "`nMake sure you click 'Install' and let it finish completely." -ForegroundColor White
-Write-Host "When the installer is done, press ENTER here to continue..." -ForegroundColor Cyan
-Read-Host
+try {
+    iwr -useb "https://steambrew.app/install.ps1" | iex
+} catch {
+    Write-Error "Failed to install Millennium via steambrew.app.`nError: $_"
+    exit 1
+}
 
 # Check Millennium folder exists
 if (-not (Test-Path $millenniumPath)) {
-    Write-Error "Millennium folder not found at $millenniumPath.`nMake sure you completed the Millennium install."
+    Write-Error "Millennium folder not found at $millenniumPath.`nMake sure the installer completed successfully."
     exit 1
 }
 
