@@ -15,6 +15,45 @@ Write-Host "██║░╚═╝░██║  ╚██████╔╝�
 Write-Host "╚═╝░░░░░╚═╝  ░╚═════╝░  ╚═╝"
 Write-Host ""
 
+# --------- Confirmation ---------
+
+$answer = Read-Host "This will remove your existing Millennium folder and reinstall the Millennium MUI Pack. Continue? (Y/N)"
+
+if ($answer -notin @('Y','y','Yes','yes')) {
+    Write-Host "Operation cancelled."
+    Read-Host "Press Enter to exit"
+    exit 0
+}
+
+# --------- Check for extraction tools (7-Zip / WinRAR) ---------
+
+$sevenZipPaths = @(
+    "$env:ProgramFiles\7-Zip\7z.exe",
+    "$env:ProgramFiles(x86)\7-Zip\7z.exe"
+)
+$sevenZip = $sevenZipPaths | Where-Object { Test-Path $_ } | Select-Object -First 1
+
+$winRarPaths = @(
+    "$env:ProgramFiles\WinRAR\WinRAR.exe",
+    "$env:ProgramFiles(x86)\WinRAR\WinRAR.exe",
+    "$env:ProgramFiles\WinRAR\Rar.exe",
+    "$env:ProgramFiles(x86)\WinRAR\Rar.exe"
+)
+$winRar = $winRarPaths | Where-Object { Test-Path $_ } | Select-Object -First 1
+
+if (-not $sevenZip -and -not $winRar) {
+    Write-Host ""
+    Write-Host "[ERROR] No supported archive extractor found."
+    Write-Host "This script requires either 7-Zip or WinRAR to extract the pack."
+    Write-Host ""
+    Write-Host "Download one of the following, install it, then run this script again:"
+    Write-Host "  - 7-Zip:  https://www.7-zip.org/download.html"
+    Write-Host "  - WinRAR: https://www.win-rar.com/ or https://winrar.en.softonic.com"
+    Write-Host ""
+    Read-Host "Press Enter to exit"
+    exit 1
+}
+
 # --------- Detect Steam install path from registry ---------
 
 $steamPath = $null
@@ -100,27 +139,20 @@ if (-not (Test-Path -Path $packTmp)) {
     exit 1
 }
 
-# --------- Extract with 7-Zip ---------
+# --------- Extract archive (7-Zip or WinRAR) ---------
 
 Write-Host ""
 Write-Host "Extracting pack into Millennium folder..."
 
-$sevenZipPaths = @(
-    "$env:ProgramFiles\7-Zip\7z.exe",
-    "$env:ProgramFiles(x86)\7-Zip\7z.exe"
-)
-
-$sevenZip = $sevenZipPaths | Where-Object { Test-Path $_ } | Select-Object -First 1
-
-if (-not $sevenZip) {
-    Write-Host ""
-    Write-Host "[ERROR] 7-Zip not found in `"C:\Program Files\7-Zip`" or `"C:\Program Files (x86)\7-Zip`"."
-    Write-Host "Please install 7-Zip or add it to PATH, then run this script again."
-    Read-Host "Press Enter to exit"
-    exit 1
+if ($sevenZip) {
+    Write-Host "Using 7-Zip at: $sevenZip"
+    & $sevenZip 'x' $packTmp "-o$millenniumDir" '-y'
 }
-
-& $sevenZip 'x' $packTmp "-o$millenniumDir" '-y'
+elseif ($winRar) {
+    Write-Host "Using WinRAR at: $winRar"
+    # WinRAR: x = extract with full paths, -ibck = run in background, -y = assume Yes on all queries
+    & $winRar 'x' '-ibck' '-y' $packTmp $millenniumDir
+}
 
 # --------- Cleanup ---------
 
