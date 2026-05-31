@@ -35,7 +35,7 @@ This is essentially a convenience installer and configuration bundle on top of e
 
 ## Requirements
 
-- Windows
+- Windows 10/11
 - Steam installed
 - [7-Zip](https://www.7-zip.org/) installed in a standard location (`C:\Program Files\7-Zip` or `C:\Program Files (x86)\7-Zip`)
 - PowerShell 5+ (comes with modern Windows)
