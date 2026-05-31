@@ -160,8 +160,21 @@ Write-Host ""
 Write-Host "Cleanup: removing temporary archive..."
 Remove-Item -Path $packTmp -Force -ErrorAction SilentlyContinue
 
+# --------- Auto-start Steam ---------
+
+Write-Host ""
+Write-Host "Starting Steam..."
+
+$steamExe = Join-Path $steamPath 'steam.exe'
+
+if (Test-Path $steamExe) {
+    Start-Process -FilePath $steamExe
+} else {
+    Write-Host "[WARNING] steam.exe was not found at '$steamExe'. Please start Steam manually."
+}
+
 Write-Host ""
 Write-Host "Done. Millennium MUI Pack 1.0 has been installed."
-Write-Host "You can now start Steam and select the Millennium skin."
+Write-Host "You can now select the Millennium skin in Steam's interface settings."
 Write-Host ""
 Read-Host "Press Enter to exit"
