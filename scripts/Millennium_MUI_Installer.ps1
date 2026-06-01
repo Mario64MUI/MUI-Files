@@ -1,8 +1,11 @@
 # ================================
 #  MUI INSTALLER - MILLENNIUM CLEAN SETUP (PowerShell)
-#  Safe version:
-#   - If Steam\millennium exists: reinstall MUI pack into it
-#   - If Steam\millennium is missing: download & run Millennium installer EXE
+#  Safe behavior:
+#    - If Steam\millennium is missing:
+#        -> Download & run official Millennium installer, then EXIT.
+#    - If Steam\millennium exists:
+#        -> Stop Millennium processes, delete ONLY Steam\millennium,
+#           install Millennium_MUI_Pack_1.0.rar into Steam\millennium.
 # ================================
 
 Set-Location -Path $PSScriptRoot
@@ -59,7 +62,7 @@ if (-not (Test-Path $millenniumDir)) {
         exit 0
     }
 
-    # Official Millennium Windows installer (adjust if you prefer a different source)
+    # Official Millennium Windows installer (URL taken from docs/releases)
     $installerName = 'MillenniumInstaller-Windows.exe'
     $installerUrl  = 'https://github.com/SteamClientHomebrew/Millennium/releases/latest/download/MillenniumInstaller-Windows.exe'
     $installerPath = Join-Path $env:TEMP $installerName
@@ -146,19 +149,38 @@ Write-Host "Temp archive path            : $packTmp"
 Write-Host "Temp extract folder          : $extractTmp"
 Write-Host ""
 
-# --------- Close Steam ---------
+# --------- Close Steam and Millennium processes ---------
 
 Write-Host "Closing Steam if running..."
 Get-Process -Name 'steam' -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+
+Write-Host "Stopping any Millennium-related processes..."
+$millenniumProcesses = @(
+    'millennium',
+    'millennium.luavm64',
+    'millennium.crashhandler64'
+)
+
+foreach ($pName in $millenniumProcesses) {
+    Get-Process -Name $pName -ErrorAction SilentlyContinue | ForEach-Object {
+        Write-Host " - Killing process: $($_.ProcessName) (PID $($_.Id))"
+        try {
+            $_ | Stop-Process -Force -ErrorAction SilentlyContinue
+        } catch { }
+    }
+}
+
+Start-Sleep -Seconds 1
 
 # --------- Remove ONLY Steam\millennium ---------
 
 if (Test-Path $millenniumDir) {
     Write-Host "Removing existing Steam\\millennium folder..."
     try {
-        Remove-Item -Path $millenniumDir -Recurse -Force
+        Remove-Item -Path $millenniumDir -Recurse -Force -ErrorAction Stop
     } catch {
         Write-Host "[ERROR] Failed to remove '$millenniumDir': $($_.Exception.Message)"
+        Write-Host "Make sure Steam and Millennium are fully closed, then try again."
         Read-Host "Press Enter to exit"
         exit 1
     }
@@ -231,6 +253,7 @@ if (-not $extractedItems) {
 }
 
 # We expect a top-level 'millennium' folder in the extracted temp
+
 $millenniumExtracted = $extractedItems | Where-Object { $_.PSIsContainer -and $_.Name -ieq 'millennium' } | Select-Object -First 1
 
 if (-not $millenniumExtracted) {
@@ -253,7 +276,6 @@ if (Test-Path $millenniumDir) {
     Remove-Item -Path $millenniumDir -Recurse -Force -ErrorAction SilentlyContinue
 }
 
-# Use robocopy from the extracted 'millennium' to Steam\millennium
 robocopy $millenniumExtracted.FullName $millenniumDir /E /NFL /NDL /NJH /NJS
 $roboExit = $LASTEXITCODE
 
@@ -291,9 +313,7 @@ Write-Host "Cleaning up temp files..."
 Remove-Item -Path $packTmp    -Force -ErrorAction SilentlyContinue
 Remove-Item -Path $extractTmp -Recurse -Force -ErrorAction SilentlyContinue
 
-# --------- Do NOT start Steam here ---------
-# Millennium’s own installer will restart Steam when it runs.
-# For MUI-only reinstall, you can choose to start Steam if you want.
+# --------- Do NOT auto-start Steam here by default ---------
 
 $startSteam = Read-Host "MUI pack install complete. Start Steam now? (Y/N)"
 if ($startSteam -in @('Y','y','Yes','yes')) {
@@ -307,7 +327,8 @@ if ($startSteam -in @('Y','y','Yes','yes')) {
 }
 
 Write-Host ""
-Write-Host "Done. If Millennium was missing, you should have run its installer first."
+Write-Host "Done."
+Write-Host "If Millennium was missing, you should have run its installer first."
 Write-Host "If Millennium was present, the MUI pack is now installed into Steam\\millennium."
 Write-Host ""
 Read-Host "Press Enter to exit"
