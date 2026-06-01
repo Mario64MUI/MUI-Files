@@ -68,7 +68,7 @@ $packName      = 'Millennium_MUI_Pack_1.0.rar'
 $packUrl       = 'https://github.com/Mario64MUI/MUI-Files/releases/download/v1.0.0/Millennium_MUI_Pack_1.0.rar'
 $packTmp       = Join-Path $env:TEMP $packName
 
-# Temp folder we extract into before copying — avoids all path/nesting issues
+# Temp folder we extract into before copying
 $extractTmp    = Join-Path $env:TEMP 'MUI_Extract_Temp'
 
 Write-Host "Steam path      : $steamPath"
@@ -119,12 +119,6 @@ if (-not (Test-Path $packTmp)) {
 }
 
 # --------- Extract to temp folder first ---------
-#
-# We extract into a neutral temp directory rather than directly into the
-# Steam skin folder. This avoids two problems:
-#   1. WinRAR path/quoting issues with deep Steam install paths.
-#   2. A hidden root subfolder inside the RAR landing as a nested folder.
-# After extraction we find the actual content root and robocopy it over.
 
 Write-Host ""
 Write-Host "Extracting to temp folder: $extractTmp"
@@ -145,13 +139,17 @@ if ($exitCode -ne 0) {
     exit 1
 }
 
-# --------- Find the actual content root inside the extracted temp folder ---------
-#
-# If the RAR was created with a root subfolder (e.g. Millennium_MUI_Pack_1.0\)
-# we detect it here and use that subfolder as the source, not the temp root.
-# This means the script works correctly whether or not the RAR has a wrapper folder.
+# --------- Inspect extracted temp folder ---------
 
 $extractedItems = Get-ChildItem -Path $extractTmp
+Write-Host ""
+Write-Host "Items in extract temp:"
+if ($extractedItems) {
+    $extractedItems | ForEach-Object { Write-Host " - $($_.FullName)" }
+} else {
+    Write-Host " (none)"
+}
+
 if (-not $extractedItems) {
     Write-Host "[ERROR] Extraction succeeded but temp folder is empty. The RAR may be corrupt."
     Read-Host "Press Enter to exit"
@@ -171,13 +169,6 @@ Write-Host "Content source  : $contentRoot"
 Write-Host "Copying into    : $millenniumDir"
 
 # --------- Robocopy content into the Millennium skin folder ---------
-#
-# /E   = copy all subdirectories including empty ones
-# /NFL = no file list (less noisy output)
-# /NDL = no directory list
-# /NJH = no job header
-# /NJS = no job summary
-# Robocopy exit codes 0-7 are all considered success (>=8 = real error)
 
 robocopy $contentRoot $millenniumDir /E /NFL /NDL /NJH /NJS
 $roboExit = $LASTEXITCODE
@@ -190,6 +181,7 @@ if ($roboExit -ge 8) {
 }
 
 # Verify
+
 $finalItems = Get-ChildItem -Path $millenniumDir -ErrorAction SilentlyContinue
 if (-not $finalItems) {
     Write-Host "[WARNING] Millennium folder is still empty after copy."
@@ -204,7 +196,7 @@ Write-Host "Install complete: $($finalItems.Count) item(s) in Millennium folder.
 
 Write-Host ""
 Write-Host "Cleaning up temp files..."
-Remove-Item -Path $packTmp   -Force -ErrorAction SilentlyContinue
+Remove-Item -Path $packTmp    -Force -ErrorAction SilentlyContinue
 Remove-Item -Path $extractTmp -Recurse -Force -ErrorAction SilentlyContinue
 
 # --------- Start Steam ---------
