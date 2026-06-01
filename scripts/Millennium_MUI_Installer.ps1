@@ -1,5 +1,6 @@
 # ================================
 #  MUI INSTALLER - MILLENNIUM CLEAN SETUP (PowerShell)
+#  Safe version: only touches Steam\millennium
 # ================================
 
 Set-Location -Path $PSScriptRoot
@@ -16,7 +17,7 @@ Write-Host ""
 
 # --------- Confirmation ---------
 
-$answer = Read-Host "This will reinstall the Millennium MUI Pack into your Steam folder. Continue? (Y/N)"
+$answer = Read-Host "This will DELETE your existing Steam\\millennium folder and reinstall the Millennium MUI Pack there. Continue? (Y/N)"
 
 if ($answer -notin @('Y','y','Yes','yes')) {
     Write-Host "Operation cancelled."
@@ -24,7 +25,7 @@ if ($answer -notin @('Y','y','Yes','yes')) {
     exit 0
 }
 
-# --------- Check for extraction tools ---------
+# --------- Check for extraction tools (WinRAR CLI or 7-Zip) ---------
 
 $rarCliPaths = @(
     "$env:ProgramFiles\WinRAR\Rar.exe",
@@ -63,18 +64,17 @@ foreach ($regPath in @('HKLM:\SOFTWARE\WOW6432Node\Valve\Steam','HKLM:\SOFTWARE\
 }
 if (-not $steamPath) { $steamPath = "${env:ProgramFiles(x86)}\Steam" }
 
-# IMPORTANT: Millennium pack installs into the main Steam folder
-$targetDir    = $steamPath
+$millenniumDir = Join-Path $steamPath 'millennium'
 
 $packName     = 'Millennium_MUI_Pack_1.0.rar'
 $packUrl      = 'https://github.com/Mario64MUI/MUI-Files/releases/download/v1.0.0/Millennium_MUI_Pack_1.0.rar'
 $packTmp      = Join-Path $env:TEMP $packName
 
-# Temp folder we extract into before copying
+# Temp folder we extract into
 $extractTmp   = Join-Path $env:TEMP 'MUI_Extract_Temp'
 
 Write-Host "Steam path      : $steamPath"
-Write-Host "Target dir      : $targetDir"
+Write-Host "Millennium path : $millenniumDir"
 Write-Host ""
 
 if (-not (Test-Path $steamPath)) {
@@ -88,9 +88,27 @@ if (-not (Test-Path $steamPath)) {
 Write-Host "Closing Steam if running..."
 Get-Process -Name 'steam' -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
 
+# --------- Remove ONLY Steam\millennium ---------
+
+if (Test-Path $millenniumDir) {
+    Write-Host "Removing existing Steam\\millennium folder..."
+    try {
+        Remove-Item -Path $millenniumDir -Recurse -Force
+    } catch {
+        Write-Host "[ERROR] Failed to remove '$millenniumDir': $($_.Exception.Message)"
+        Read-Host "Press Enter to exit"
+        exit 1
+    }
+} else {
+    Write-Host "No existing Steam\\millennium folder found. Fresh install."
+}
+
 # --------- Clean and create temp extraction folder ---------
 
-if (Test-Path $extractTmp) { Remove-Item -Path $extractTmp -Recurse -Force }
+if (Test-Path $extractTmp) {
+    Write-Host "Cleaning previous temp extraction folder..."
+    Remove-Item -Path $extractTmp -Recurse -Force
+}
 New-Item -ItemType Directory -Path $extractTmp -Force | Out-Null
 
 # --------- Download ---------
@@ -111,7 +129,7 @@ if (-not (Test-Path $packTmp)) {
     exit 1
 }
 
-# --------- Extract to temp folder first ---------
+# --------- Extract to temp folder ---------
 
 Write-Host ""
 Write-Host "Extracting to temp folder: $extractTmp"
@@ -149,44 +167,62 @@ if (-not $extractedItems) {
     exit 1
 }
 
-# If there is exactly one item and it is a folder, treat it as the content root
-if ($extractedItems.Count -eq 1 -and $extractedItems[0].PSIsContainer) {
-    $contentRoot = $extractedItems[0].FullName
-    Write-Host "Detected single root folder in RAR: '$($extractedItems[0].Name)' — using its contents."
-} else {
-    $contentRoot = $extractTmp
-    Write-Host "RAR contents are at root level — copying directly."
-}
+# We expect a top-level 'millennium' folder in the extracted temp
+$millenniumExtracted = $extractedItems | Where-Object { $_.PSIsContainer -and $_.Name -ieq 'millennium' } | Select-Object -First 1
 
-Write-Host "Content source  : $contentRoot"
-Write-Host "Copying into    : $targetDir"
-
-# --------- Robocopy content into the Steam folder ---------
-
-robocopy $contentRoot $targetDir /E /NFL /NDL /NJH /NJS
-$roboExit = $LASTEXITCODE
-
-if ($roboExit -ge 8) {
-    Write-Host "[ERROR] Robocopy failed with exit code $roboExit."
-    Write-Host "Please manually copy the contents of '$contentRoot' into '$targetDir'."
+if (-not $millenniumExtracted) {
+    Write-Host "[ERROR] No 'millennium' folder found in extracted temp contents."
+    Write-Host "Expected something like '$extractTmp\\millennium\\config', 'bin', 'lib', 'themes', 'plugins'."
     Read-Host "Press Enter to exit"
     exit 1
 }
 
-# Basic verification: check for millennium subfolder under Steam
+Write-Host "Found extracted 'millennium' folder at: $($millenniumExtracted.FullName)"
 
-$millenniumRoot = Join-Path $steamPath 'millennium'
-if (-not (Test-Path $millenniumRoot)) {
-    Write-Host "[WARNING] 'millennium' folder not found directly under '$steamPath'."
-    Write-Host "Check '$targetDir' and '$contentRoot' to ensure files were copied correctly."
-} else {
-    $finalItems = Get-ChildItem -Path $millenniumRoot -ErrorAction SilentlyContinue
-    Write-Host "Install complete: $($finalItems.Count) item(s) inside '$millenniumRoot'."
+# --------- Copy the millennium folder itself into Steam ---------
+
+Write-Host "Copying 'millennium' into '$steamPath'..."
+
+# Ensure Steam\millennium does not already exist (should be removed earlier)
+if (Test-Path $millenniumDir) {
+    Write-Host "[WARNING] '$millenniumDir' already exists, removing again before copy..."
+    Remove-Item -Path $millenniumDir -Recurse -Force -ErrorAction SilentlyContinue
 }
+
+# Use robocopy from the extracted 'millennium' to Steam\millennium
+robocopy $millenniumExtracted.FullName $millenniumDir /E /NFL /NDL /NJH /NJS
+$roboExit = $LASTEXITCODE
+
+if ($roboExit -ge 8) {
+    Write-Host "[ERROR] Robocopy failed with exit code $roboExit."
+    Write-Host "Please manually copy '$($millenniumExtracted.FullName)' into '$millenniumDir'."
+    Read-Host "Press Enter to exit"
+    exit 1
+}
+
+# Verify structure
+
+if (-not (Test-Path $millenniumDir)) {
+    Write-Host "[ERROR] Steam\\millennium folder does not exist after copy."
+    Read-Host "Press Enter to exit"
+    exit 1
+}
+
+$finalItems = Get-ChildItem -Path $millenniumDir -ErrorAction SilentlyContinue
+Write-Host ""
+Write-Host "Contents of Steam\\millennium after install:"
+if ($finalItems) {
+    $finalItems | ForEach-Object { Write-Host " - $($_.Name)" }
+} else {
+    Write-Host " (empty)"
+}
+
+Write-Host ""
+Write-Host "Expected to see: config, bin, lib, themes, plugins"
+Write-Host ""
 
 # --------- Cleanup ---------
 
-Write-Host ""
 Write-Host "Cleaning up temp files..."
 Remove-Item -Path $packTmp    -Force -ErrorAction SilentlyContinue
 Remove-Item -Path $extractTmp -Recurse -Force -ErrorAction SilentlyContinue
@@ -203,7 +239,7 @@ if (Test-Path $steamExe) {
 }
 
 Write-Host ""
-Write-Host "Done. Millennium MUI Pack 1.0 has been installed."
-Write-Host "Check your Steam folder for the 'millennium' directory and the MUI files."
+Write-Host "Done. Millennium MUI Pack 1.0 has been installed into Steam\\millennium."
+Write-Host "Structure should be: config, bin, lib, themes, plugins under Steam\\millennium."
 Write-Host ""
 Read-Host "Press Enter to exit"
