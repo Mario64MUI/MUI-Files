@@ -150,8 +150,16 @@ if ($sevenZip) {
 }
 elseif ($winRar) {
     Write-Host "Using WinRAR at: $winRar"
-    # WinRAR: x = extract with full paths, -ibck = run in background, -y = assume Yes on all queries
-    & $winRar 'x' '-ibck' '-y' $packTmp $millenniumDir
+    # WinRAR: x = extract with full paths, -ibck = background, -y = assume Yes on all queries
+    $args = @(
+        'x'
+        '-ibck'
+        '-y'
+        "`"$packTmp`""
+        '*.*'
+        "`"$millenniumDir`\`""
+    )
+    & $winRar $args
 }
 
 # --------- Cleanup ---------
