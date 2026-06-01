@@ -150,15 +150,24 @@ if ($sevenZip) {
 }
 elseif ($winRar) {
     Write-Host "Using WinRAR at: $winRar"
-    # WinRAR: x = extract with full paths, -ibck = background, -y = assume Yes on all queries
+
+    $packedPath   = "`"$packTmp`""
+    $destPath     = "`"$millenniumDir`\`""
+
+    Write-Host "WinRAR archive path: $packedPath"
+    Write-Host "WinRAR destination : $destPath"
+
+    # WinRAR: x = extract with full paths, -y = assume Yes on all queries
     $args = @(
         'x'
-        '-ibck'
         '-y'
-        "`"$packTmp`""
+        $packedPath
         '*.*'
-        "`"$millenniumDir`\`""
+        $destPath
     )
+
+    Write-Host "WinRAR arguments   : $($args -join ' ')"
+
     & $winRar $args
 }
 
@@ -166,7 +175,7 @@ elseif ($winRar) {
 
 Write-Host ""
 Write-Host "Cleanup: removing temporary archive..."
-Remove-Item -Path $packTmp -Force -ErrorAction SilentlyContinue
+# Remove-Item -Path $packTmp -Force -ErrorAction SilentlyContinue
 
 # --------- Auto-start Steam ---------
 
