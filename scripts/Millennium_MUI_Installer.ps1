@@ -24,19 +24,16 @@ if ($answer -notin @('Y','y','Yes','yes')) {
     exit 0
 }
 
-# --------- Check for extraction tools (WinRAR CLI / UnRAR / 7-Zip) ---------
+# --------- Check for extraction tools ---------
 
-# Prefer Rar.exe / UnRAR.exe for reliable headless CLI extraction.
-# WinRAR.exe is the GUI and can open a window instead of extracting silently.
 $rarCliPaths = @(
     "$env:ProgramFiles\WinRAR\Rar.exe",
-    "$env:ProgramFiles(x86)\WinRAR\Rar.exe",
+    "${env:ProgramFiles(x86)}\WinRAR\Rar.exe",
     "$env:ProgramFiles\WinRAR\UnRAR.exe",
-    "$env:ProgramFiles(x86)\WinRAR\UnRAR.exe"
+    "${env:ProgramFiles(x86)}\WinRAR\UnRAR.exe"
 )
 $rarCli = $rarCliPaths | Where-Object { Test-Path $_ } | Select-Object -First 1
 
-# Fall back to 7-Zip if no WinRAR CLI tool found
 $sevenZipPaths = @(
     "$env:ProgramFiles\7-Zip\7z.exe",
     "${env:ProgramFiles(x86)}\7-Zip\7z.exe"
@@ -46,9 +43,6 @@ $sevenZip = $sevenZipPaths | Where-Object { Test-Path $_ } | Select-Object -Firs
 if (-not $rarCli -and -not $sevenZip) {
     Write-Host ""
     Write-Host "[ERROR] No supported archive extractor found."
-    Write-Host "This script requires WinRAR (Rar.exe) or 7-Zip to extract the pack."
-    Write-Host ""
-    Write-Host "Download one of the following, install it, then run this script again:"
     Write-Host "  - 7-Zip:  https://www.7-zip.org/download.html"
     Write-Host "  - WinRAR: https://www.win-rar.com/"
     Write-Host ""
@@ -56,149 +50,172 @@ if (-not $rarCli -and -not $sevenZip) {
     exit 1
 }
 
-# --------- Detect Steam install path from registry ---------
+# --------- Detect Steam path ---------
 
 $steamPath = $null
-
-$steamRegPaths = @(
-    'HKLM:\SOFTWARE\WOW6432Node\Valve\Steam',
-    'HKLM:\SOFTWARE\Valve\Steam'
-)
-
-foreach ($regPath in $steamRegPaths) {
+foreach ($regPath in @('HKLM:\SOFTWARE\WOW6432Node\Valve\Steam','HKLM:\SOFTWARE\Valve\Steam')) {
     if (Test-Path $regPath) {
         try {
-            $installPath = (Get-ItemProperty -Path $regPath -Name InstallPath -ErrorAction Stop).InstallPath
-            if ($installPath -and (Test-Path $installPath)) {
-                $steamPath = $installPath
-                break
-            }
+            $p = (Get-ItemProperty -Path $regPath -Name InstallPath -ErrorAction Stop).InstallPath
+            if ($p -and (Test-Path $p)) { $steamPath = $p; break }
         } catch { }
     }
 }
-
-if (-not $steamPath) {
-    $steamPath = "${env:ProgramFiles(x86)}\Steam"
-}
+if (-not $steamPath) { $steamPath = "${env:ProgramFiles(x86)}\Steam" }
 
 $millenniumDir = Join-Path $steamPath 'steamui\skins\Millennium'
 $packName      = 'Millennium_MUI_Pack_1.0.rar'
 $packUrl       = 'https://github.com/Mario64MUI/MUI-Files/releases/download/v1.0.0/Millennium_MUI_Pack_1.0.rar'
 $packTmp       = Join-Path $env:TEMP $packName
 
-Write-Host "Detected / assumed Steam path: $steamPath"
-Write-Host "Target Millennium folder:     $millenniumDir"
+# Temp folder we extract into before copying — avoids all path/nesting issues
+$extractTmp    = Join-Path $env:TEMP 'MUI_Extract_Temp'
+
+Write-Host "Steam path      : $steamPath"
+Write-Host "Millennium dir  : $millenniumDir"
 Write-Host ""
 
 if (-not (Test-Path $steamPath)) {
-    Write-Host "[ERROR] Steam folder was not found at '$steamPath'."
-    Write-Host "Steam might not be installed, or it is in a custom location."
+    Write-Host "[ERROR] Steam folder not found at '$steamPath'."
     Read-Host "Press Enter to exit"
     exit 1
 }
 
-# --------- Close Steam if running ---------
+# --------- Close Steam ---------
 
-Write-Host "Closing Steam if it is running..."
+Write-Host "Closing Steam if running..."
 Get-Process -Name 'steam' -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
 
 # --------- Clean Millennium folder ---------
 
-if (Test-Path -Path $millenniumDir) {
+if (Test-Path $millenniumDir) {
     Write-Host "Removing existing Millennium folder..."
     Remove-Item -Path $millenniumDir -Recurse -Force
 }
-
 Write-Host "Creating fresh Millennium folder..."
 New-Item -ItemType Directory -Path $millenniumDir -Force | Out-Null
 
-# --------- Download archive ---------
+# --------- Clean and create temp extraction folder ---------
+
+if (Test-Path $extractTmp) { Remove-Item -Path $extractTmp -Recurse -Force }
+New-Item -ItemType Directory -Path $extractTmp -Force | Out-Null
+
+# --------- Download ---------
 
 Write-Host ""
 Write-Host "Downloading Millennium MUI Pack 1.0..."
 try {
     Invoke-WebRequest -Uri $packUrl -OutFile $packTmp -UseBasicParsing
 } catch {
-    Write-Host ""
     Write-Host "[ERROR] Download failed: $($_.Exception.Message)"
     Read-Host "Press Enter to exit"
     exit 1
 }
 
-if (-not (Test-Path -Path $packTmp)) {
-    Write-Host "[ERROR] Download failed. Archive not found at $packTmp"
+if (-not (Test-Path $packTmp)) {
+    Write-Host "[ERROR] Archive not found after download at $packTmp"
     Read-Host "Press Enter to exit"
     exit 1
 }
 
-# --------- Extract archive ---------
+# --------- Extract to temp folder first ---------
 #
-# KEY FIX: Do NOT pre-quote paths when using & with an array.
-# PowerShell handles quoting automatically — adding your own quotes
-# causes double-quoting and WinRAR/7-Zip silently fail to find the file.
-#
-# Also: trailing backslash on the destination is required by WinRAR CLI.
+# We extract into a neutral temp directory rather than directly into the
+# Steam skin folder. This avoids two problems:
+#   1. WinRAR path/quoting issues with deep Steam install paths.
+#   2. A hidden root subfolder inside the RAR landing as a nested folder.
+# After extraction we find the actual content root and robocopy it over.
 
 Write-Host ""
-Write-Host "Extracting pack into Millennium folder..."
-
-$exitCode = 0
+Write-Host "Extracting to temp folder: $extractTmp"
 
 if ($rarCli) {
-    Write-Host "Using WinRAR CLI at: $rarCli"
-
-    # Destination must end with a backslash for Rar.exe / UnRAR.exe
-    $dest = "$millenniumDir\"
-
-    # Pass raw (unquoted) strings — PowerShell quotes them correctly
-    & $rarCli x -y $packTmp $dest
+    Write-Host "Using WinRAR CLI: $rarCli"
+    & $rarCli x -y $packTmp "$extractTmp\"
     $exitCode = $LASTEXITCODE
-
-} elseif ($sevenZip) {
-    Write-Host "Using 7-Zip at: $sevenZip"
-
-    # -o must be joined directly to the path (no space) for 7z.exe
-    & $sevenZip x $packTmp "-o$millenniumDir" -y
+} else {
+    Write-Host "Using 7-Zip: $sevenZip"
+    & $sevenZip x $packTmp "-o$extractTmp" -y
     $exitCode = $LASTEXITCODE
 }
 
 if ($exitCode -ne 0) {
-    Write-Host ""
     Write-Host "[ERROR] Extraction failed (exit code $exitCode)."
-    Write-Host "The archive may be corrupt. Try deleting '$packTmp' and running the script again."
     Read-Host "Press Enter to exit"
     exit 1
 }
 
-# Verify something was actually extracted
-$extractedItems = Get-ChildItem -Path $millenniumDir -ErrorAction SilentlyContinue
+# --------- Find the actual content root inside the extracted temp folder ---------
+#
+# If the RAR was created with a root subfolder (e.g. Millennium_MUI_Pack_1.0\)
+# we detect it here and use that subfolder as the source, not the temp root.
+# This means the script works correctly whether or not the RAR has a wrapper folder.
+
+$extractedItems = Get-ChildItem -Path $extractTmp
 if (-not $extractedItems) {
-    Write-Host ""
-    Write-Host "[WARNING] Extraction reported success but the Millennium folder is empty."
-    Write-Host "Please extract '$packTmp' manually into '$millenniumDir'."
+    Write-Host "[ERROR] Extraction succeeded but temp folder is empty. The RAR may be corrupt."
     Read-Host "Press Enter to exit"
     exit 1
 }
 
-Write-Host "Extraction complete. $($extractedItems.Count) item(s) placed in Millennium folder."
+# If there is exactly one item and it is a folder, treat it as the content root
+if ($extractedItems.Count -eq 1 -and $extractedItems[0].PSIsContainer) {
+    $contentRoot = $extractedItems[0].FullName
+    Write-Host "Detected single root folder in RAR: '$($extractedItems[0].Name)' — using its contents."
+} else {
+    $contentRoot = $extractTmp
+    Write-Host "RAR contents are at root level — copying directly."
+}
+
+Write-Host "Content source  : $contentRoot"
+Write-Host "Copying into    : $millenniumDir"
+
+# --------- Robocopy content into the Millennium skin folder ---------
+#
+# /E   = copy all subdirectories including empty ones
+# /NFL = no file list (less noisy output)
+# /NDL = no directory list
+# /NJH = no job header
+# /NJS = no job summary
+# Robocopy exit codes 0-7 are all considered success (>=8 = real error)
+
+robocopy $contentRoot $millenniumDir /E /NFL /NDL /NJH /NJS
+$roboExit = $LASTEXITCODE
+
+if ($roboExit -ge 8) {
+    Write-Host "[ERROR] Robocopy failed with exit code $roboExit."
+    Write-Host "Please manually copy the contents of '$contentRoot' into '$millenniumDir'."
+    Read-Host "Press Enter to exit"
+    exit 1
+}
+
+# Verify
+$finalItems = Get-ChildItem -Path $millenniumDir -ErrorAction SilentlyContinue
+if (-not $finalItems) {
+    Write-Host "[WARNING] Millennium folder is still empty after copy."
+    Write-Host "Please manually copy from '$contentRoot' into '$millenniumDir'."
+    Read-Host "Press Enter to exit"
+    exit 1
+}
+
+Write-Host "Install complete: $($finalItems.Count) item(s) in Millennium folder."
 
 # --------- Cleanup ---------
 
 Write-Host ""
-Write-Host "Cleanup: removing temporary archive..."
-Remove-Item -Path $packTmp -Force -ErrorAction SilentlyContinue
+Write-Host "Cleaning up temp files..."
+Remove-Item -Path $packTmp   -Force -ErrorAction SilentlyContinue
+Remove-Item -Path $extractTmp -Recurse -Force -ErrorAction SilentlyContinue
 
-# --------- Auto-start Steam ---------
+# --------- Start Steam ---------
 
 Write-Host ""
 Write-Host "Starting Steam..."
-
 $steamExe = Join-Path $steamPath 'steam.exe'
-
 if (Test-Path $steamExe) {
     Start-Process -FilePath $steamExe
 } else {
-    Write-Host "[WARNING] steam.exe not found at '$steamExe'. Please start Steam manually."
+    Write-Host "[WARNING] steam.exe not found at '$steamExe'. Start Steam manually."
 }
 
 Write-Host ""
