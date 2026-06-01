@@ -1,6 +1,8 @@
 # ================================
 #  MUI INSTALLER - MILLENNIUM CLEAN SETUP (PowerShell)
-#  Safe version: only touches Steam\millennium
+#  Safe version:
+#   - If Steam\millennium exists: reinstall MUI pack into it
+#   - If Steam\millennium is missing: download & run Millennium installer EXE
 # ================================
 
 Set-Location -Path $PSScriptRoot
@@ -15,10 +17,90 @@ Write-Host "██║░╚═╝░██║  ╚██████╔╝  █�
 Write-Host "╚═╝░░░░░╚═╝  ░╚═════╝░  ╚═╝"
 Write-Host ""
 
-# --------- Confirmation ---------
+# --------- Detect Steam path ---------
+
+$steamPath = $null
+foreach ($regPath in @('HKLM:\SOFTWARE\WOW6432Node\Valve\Steam','HKLM:\SOFTWARE\Valve\Steam')) {
+    if (Test-Path $regPath) {
+        try {
+            $p = (Get-ItemProperty -Path $regPath -Name InstallPath -ErrorAction Stop).InstallPath
+            if ($p -and (Test-Path $p)) { $steamPath = $p; break }
+        } catch { }
+    }
+}
+if (-not $steamPath) { $steamPath = "${env:ProgramFiles(x86)}\Steam" }
+
+Write-Host "Detected / assumed Steam path : $steamPath"
+Write-Host ""
+
+if (-not (Test-Path $steamPath)) {
+    Write-Host "[ERROR] Steam folder not found at '$steamPath'."
+    Read-Host "Press Enter to exit"
+    exit 1
+}
+
+$millenniumDir = Join-Path $steamPath 'millennium'
+Write-Host "Millennium path                : $millenniumDir"
+Write-Host ""
+
+# --------- If Millennium is missing, download & run its installer, then exit ---------
+
+if (-not (Test-Path $millenniumDir)) {
+    Write-Host "Millennium is NOT installed in your Steam folder."
+    Write-Host ""
+    Write-Host "This script will now download and launch the official Millennium installer for Windows."
+    Write-Host "After completing that installer and restarting Steam, run this script again to install the MUI pack."
+    Write-Host ""
+
+    $confirm = Read-Host "Download and run Millennium installer now? (Y/N)"
+    if ($confirm -notin @('Y','y','Yes','yes')) {
+        Write-Host "Operation cancelled."
+        Read-Host "Press Enter to exit"
+        exit 0
+    }
+
+    # Official Millennium Windows installer (adjust if you prefer a different source)
+    $installerName = 'MillenniumInstaller-Windows.exe'
+    $installerUrl  = 'https://github.com/SteamClientHomebrew/Millennium/releases/latest/download/MillenniumInstaller-Windows.exe'
+    $installerPath = Join-Path $env:TEMP $installerName
+
+    Write-Host ""
+    Write-Host "Downloading Millennium installer..."
+    Write-Host "From: $installerUrl"
+    Write-Host "To  : $installerPath"
+
+    try {
+        Invoke-WebRequest -Uri $installerUrl -OutFile $installerPath -UseBasicParsing
+    } catch {
+        Write-Host "[ERROR] Download failed: $($_.Exception.Message)"
+        Write-Host "You can also manually download it from https://steambrew.app/ or the Millennium GitHub releases page."
+        Read-Host "Press Enter to exit"
+        exit 1
+    }
+
+    if (-not (Test-Path $installerPath)) {
+        Write-Host "[ERROR] Installer file not found at '$installerPath' after download."
+        Read-Host "Press Enter to exit"
+        exit 1
+    }
+
+    Write-Host ""
+    Write-Host "Launching Millennium installer..."
+    Write-Host "Follow its steps to install Millennium into your Steam folder, then re-run this script."
+    Start-Process -FilePath $installerPath
+
+    Write-Host ""
+    Write-Host "Installer started. This script will now exit."
+    Read-Host "Press Enter to exit"
+    exit 0
+}
+
+# --------- From here on: Millennium exists, so we reinstall your MUI pack ---------
+
+Write-Host "Millennium is installed. Proceeding to reinstall the Millennium MUI Pack into Steam\\millennium."
+Write-Host ""
 
 $answer = Read-Host "This will DELETE your existing Steam\\millennium folder and reinstall the Millennium MUI Pack there. Continue? (Y/N)"
-
 if ($answer -notin @('Y','y','Yes','yes')) {
     Write-Host "Operation cancelled."
     Read-Host "Press Enter to exit"
@@ -51,37 +133,18 @@ if (-not $rarCli -and -not $sevenZip) {
     exit 1
 }
 
-# --------- Detect Steam path ---------
+# --------- Paths for MUI pack ---------
 
-$steamPath = $null
-foreach ($regPath in @('HKLM:\SOFTWARE\WOW6432Node\Valve\Steam','HKLM:\SOFTWARE\Valve\Steam')) {
-    if (Test-Path $regPath) {
-        try {
-            $p = (Get-ItemProperty -Path $regPath -Name InstallPath -ErrorAction Stop).InstallPath
-            if ($p -and (Test-Path $p)) { $steamPath = $p; break }
-        } catch { }
-    }
-}
-if (-not $steamPath) { $steamPath = "${env:ProgramFiles(x86)}\Steam" }
+$packName   = 'Millennium_MUI_Pack_1.0.rar'
+$packUrl    = 'https://github.com/Mario64MUI/MUI-Files/releases/download/v1.0.0/Millennium_MUI_Pack_1.0.rar'
+$packTmp    = Join-Path $env:TEMP $packName
 
-$millenniumDir = Join-Path $steamPath 'millennium'
+$extractTmp = Join-Path $env:TEMP 'MUI_Extract_Temp'
 
-$packName     = 'Millennium_MUI_Pack_1.0.rar'
-$packUrl      = 'https://github.com/Mario64MUI/MUI-Files/releases/download/v1.0.0/Millennium_MUI_Pack_1.0.rar'
-$packTmp      = Join-Path $env:TEMP $packName
-
-# Temp folder we extract into
-$extractTmp   = Join-Path $env:TEMP 'MUI_Extract_Temp'
-
-Write-Host "Steam path      : $steamPath"
-Write-Host "Millennium path : $millenniumDir"
+Write-Host "MUI pack URL                 : $packUrl"
+Write-Host "Temp archive path            : $packTmp"
+Write-Host "Temp extract folder          : $extractTmp"
 Write-Host ""
-
-if (-not (Test-Path $steamPath)) {
-    Write-Host "[ERROR] Steam folder not found at '$steamPath'."
-    Read-Host "Press Enter to exit"
-    exit 1
-}
 
 # --------- Close Steam ---------
 
@@ -100,7 +163,7 @@ if (Test-Path $millenniumDir) {
         exit 1
     }
 } else {
-    Write-Host "No existing Steam\\millennium folder found. Fresh install."
+    Write-Host "No existing Steam\\millennium folder found. Fresh MUI install."
 }
 
 # --------- Clean and create temp extraction folder ---------
@@ -111,7 +174,7 @@ if (Test-Path $extractTmp) {
 }
 New-Item -ItemType Directory -Path $extractTmp -Force | Out-Null
 
-# --------- Download ---------
+# --------- Download MUI pack ---------
 
 Write-Host ""
 Write-Host "Downloading Millennium MUI Pack 1.0..."
@@ -129,10 +192,10 @@ if (-not (Test-Path $packTmp)) {
     exit 1
 }
 
-# --------- Extract to temp folder ---------
+# --------- Extract MUI pack to temp folder ---------
 
 Write-Host ""
-Write-Host "Extracting to temp folder: $extractTmp"
+Write-Host "Extracting MUI pack to temp folder: $extractTmp"
 
 if ($rarCli) {
     Write-Host "Using WinRAR CLI: $rarCli"
@@ -181,7 +244,8 @@ Write-Host "Found extracted 'millennium' folder at: $($millenniumExtracted.FullN
 
 # --------- Copy the millennium folder itself into Steam ---------
 
-Write-Host "Copying 'millennium' into '$steamPath'..."
+Write-Host ""
+Write-Host "Copying 'millennium' into '$steamPath' as a fresh MUI install..."
 
 # Ensure Steam\millennium does not already exist (should be removed earlier)
 if (Test-Path $millenniumDir) {
@@ -227,19 +291,23 @@ Write-Host "Cleaning up temp files..."
 Remove-Item -Path $packTmp    -Force -ErrorAction SilentlyContinue
 Remove-Item -Path $extractTmp -Recurse -Force -ErrorAction SilentlyContinue
 
-# --------- Start Steam ---------
+# --------- Do NOT start Steam here ---------
+# Millennium’s own installer will restart Steam when it runs.
+# For MUI-only reinstall, you can choose to start Steam if you want.
 
-Write-Host ""
-Write-Host "Starting Steam..."
-$steamExe = Join-Path $steamPath 'steam.exe'
-if (Test-Path $steamExe) {
-    Start-Process -FilePath $steamExe
-} else {
-    Write-Host "[WARNING] steam.exe not found at '$steamExe'. Start Steam manually."
+$startSteam = Read-Host "MUI pack install complete. Start Steam now? (Y/N)"
+if ($startSteam -in @('Y','y','Yes','yes')) {
+    $steamExe = Join-Path $steamPath 'steam.exe'
+    if (Test-Path $steamExe) {
+        Write-Host "Starting Steam..."
+        Start-Process -FilePath $steamExe
+    } else {
+        Write-Host "[WARNING] steam.exe not found at '$steamExe'. Start Steam manually."
+    }
 }
 
 Write-Host ""
-Write-Host "Done. Millennium MUI Pack 1.0 has been installed into Steam\\millennium."
-Write-Host "Structure should be: config, bin, lib, themes, plugins under Steam\\millennium."
+Write-Host "Done. If Millennium was missing, you should have run its installer first."
+Write-Host "If Millennium was present, the MUI pack is now installed into Steam\\millennium."
 Write-Host ""
 Read-Host "Press Enter to exit"
