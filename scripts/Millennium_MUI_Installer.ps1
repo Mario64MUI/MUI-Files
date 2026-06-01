@@ -16,7 +16,7 @@ Write-Host ""
 
 # --------- Confirmation ---------
 
-$answer = Read-Host "This will remove your existing Millennium folder and reinstall the Millennium MUI Pack. Continue? (Y/N)"
+$answer = Read-Host "This will reinstall the Millennium MUI Pack into your Steam folder. Continue? (Y/N)"
 
 if ($answer -notin @('Y','y','Yes','yes')) {
     Write-Host "Operation cancelled."
@@ -63,16 +63,18 @@ foreach ($regPath in @('HKLM:\SOFTWARE\WOW6432Node\Valve\Steam','HKLM:\SOFTWARE\
 }
 if (-not $steamPath) { $steamPath = "${env:ProgramFiles(x86)}\Steam" }
 
-$millenniumDir = $steamPath
-$packName      = 'Millennium_MUI_Pack_1.0.rar'
-$packUrl       = 'https://github.com/Mario64MUI/MUI-Files/releases/download/v1.0.0/Millennium_MUI_Pack_1.0.rar'
-$packTmp       = Join-Path $env:TEMP $packName
+# IMPORTANT: Millennium pack installs into the main Steam folder
+$targetDir    = $steamPath
+
+$packName     = 'Millennium_MUI_Pack_1.0.rar'
+$packUrl      = 'https://github.com/Mario64MUI/MUI-Files/releases/download/v1.0.0/Millennium_MUI_Pack_1.0.rar'
+$packTmp      = Join-Path $env:TEMP $packName
 
 # Temp folder we extract into before copying
-$extractTmp    = Join-Path $env:TEMP 'MUI_Extract_Temp'
+$extractTmp   = Join-Path $env:TEMP 'MUI_Extract_Temp'
 
 Write-Host "Steam path      : $steamPath"
-Write-Host "Millennium dir  : $millenniumDir"
+Write-Host "Target dir      : $targetDir"
 Write-Host ""
 
 if (-not (Test-Path $steamPath)) {
@@ -85,15 +87,6 @@ if (-not (Test-Path $steamPath)) {
 
 Write-Host "Closing Steam if running..."
 Get-Process -Name 'steam' -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
-
-# --------- Clean Millennium folder ---------
-
-if (Test-Path $millenniumDir) {
-    Write-Host "Removing existing Millennium folder..."
-    Remove-Item -Path $millenniumDir -Recurse -Force
-}
-Write-Host "Creating fresh Millennium folder..."
-New-Item -ItemType Directory -Path $millenniumDir -Force | Out-Null
 
 # --------- Clean and create temp extraction folder ---------
 
@@ -166,31 +159,30 @@ if ($extractedItems.Count -eq 1 -and $extractedItems[0].PSIsContainer) {
 }
 
 Write-Host "Content source  : $contentRoot"
-Write-Host "Copying into    : $millenniumDir"
+Write-Host "Copying into    : $targetDir"
 
-# --------- Robocopy content into the Millennium skin folder ---------
+# --------- Robocopy content into the Steam folder ---------
 
-robocopy $contentRoot $millenniumDir /E /NFL /NDL /NJH /NJS
+robocopy $contentRoot $targetDir /E /NFL /NDL /NJH /NJS
 $roboExit = $LASTEXITCODE
 
 if ($roboExit -ge 8) {
     Write-Host "[ERROR] Robocopy failed with exit code $roboExit."
-    Write-Host "Please manually copy the contents of '$contentRoot' into '$millenniumDir'."
+    Write-Host "Please manually copy the contents of '$contentRoot' into '$targetDir'."
     Read-Host "Press Enter to exit"
     exit 1
 }
 
-# Verify
+# Basic verification: check for millennium subfolder under Steam
 
-$finalItems = Get-ChildItem -Path $millenniumDir -ErrorAction SilentlyContinue
-if (-not $finalItems) {
-    Write-Host "[WARNING] Millennium folder is still empty after copy."
-    Write-Host "Please manually copy from '$contentRoot' into '$millenniumDir'."
-    Read-Host "Press Enter to exit"
-    exit 1
+$millenniumRoot = Join-Path $steamPath 'millennium'
+if (-not (Test-Path $millenniumRoot)) {
+    Write-Host "[WARNING] 'millennium' folder not found directly under '$steamPath'."
+    Write-Host "Check '$targetDir' and '$contentRoot' to ensure files were copied correctly."
+} else {
+    $finalItems = Get-ChildItem -Path $millenniumRoot -ErrorAction SilentlyContinue
+    Write-Host "Install complete: $($finalItems.Count) item(s) inside '$millenniumRoot'."
 }
-
-Write-Host "Install complete: $($finalItems.Count) item(s) in Millennium folder."
 
 # --------- Cleanup ---------
 
@@ -212,6 +204,6 @@ if (Test-Path $steamExe) {
 
 Write-Host ""
 Write-Host "Done. Millennium MUI Pack 1.0 has been installed."
-Write-Host "You can now select the Millennium skin in Steam's interface settings."
+Write-Host "Check your Steam folder for the 'millennium' directory and the MUI files."
 Write-Host ""
 Read-Host "Press Enter to exit"
