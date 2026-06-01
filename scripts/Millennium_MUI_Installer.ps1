@@ -63,7 +63,7 @@ foreach ($regPath in @('HKLM:\SOFTWARE\WOW6432Node\Valve\Steam','HKLM:\SOFTWARE\
 }
 if (-not $steamPath) { $steamPath = "${env:ProgramFiles(x86)}\Steam" }
 
-$millenniumDir = Join-Path $steamPath 'steamui\skins\Millennium'
+$millenniumDir = $steamPath
 $packName      = 'Millennium_MUI_Pack_1.0.rar'
 $packUrl       = 'https://github.com/Mario64MUI/MUI-Files/releases/download/v1.0.0/Millennium_MUI_Pack_1.0.rar'
 $packTmp       = Join-Path $env:TEMP $packName
