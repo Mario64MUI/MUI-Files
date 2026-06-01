@@ -2,17 +2,16 @@
 #  MUI INSTALLER - MILLENNIUM CLEAN SETUP (PowerShell)
 # ================================
 
-# Make sure we run from this script's directory
 Set-Location -Path $PSScriptRoot
 
 # Banner
 Write-Host ""
-Write-Host "███╗░░░███╗  ██╗░░░██╗  ██╗"
-Write-Host "████╗░████║  ██║░░░██║  ██║"
-Write-Host "██╔████╔██║  ██║░░░██║  ██║"
-Write-Host "██║╚██╔╝██║  ██║░░░██║  ██║"
-Write-Host "██║░╚═╝░██║  ╚██████╔╝  ██║"
-Write-Host "╚═╝░░░░░╚═╝  ░╚═════╝░  ╚═╝"
+Write-Host "███╗░░░███╗  ██╗░░░██╗  ██╗"
+Write-Host "████╗░████║  ██║░░░██║  ██║"
+Write-Host "██╔████╔██║  ██║░░░██║  ██║"
+Write-Host "██║╚██╔╝██║  ██║░░░██║  ██║"
+Write-Host "██║░╚═╝░██║  ╚██████╔╝  ██║"
+Write-Host "╚═╝░░░░░╚═╝  ░╚═════╝░  ╚═╝"
 Write-Host ""
 
 # --------- Confirmation ---------
@@ -25,30 +24,33 @@ if ($answer -notin @('Y','y','Yes','yes')) {
     exit 0
 }
 
-# --------- Check for extraction tools (7-Zip / WinRAR) ---------
+# --------- Check for extraction tools (WinRAR CLI / UnRAR / 7-Zip) ---------
 
+# Prefer Rar.exe / UnRAR.exe for reliable headless CLI extraction.
+# WinRAR.exe is the GUI and can open a window instead of extracting silently.
+$rarCliPaths = @(
+    "$env:ProgramFiles\WinRAR\Rar.exe",
+    "$env:ProgramFiles(x86)\WinRAR\Rar.exe",
+    "$env:ProgramFiles\WinRAR\UnRAR.exe",
+    "$env:ProgramFiles(x86)\WinRAR\UnRAR.exe"
+)
+$rarCli = $rarCliPaths | Where-Object { Test-Path $_ } | Select-Object -First 1
+
+# Fall back to 7-Zip if no WinRAR CLI tool found
 $sevenZipPaths = @(
     "$env:ProgramFiles\7-Zip\7z.exe",
-    "$env:ProgramFiles(x86)\7-Zip\7z.exe"
+    "${env:ProgramFiles(x86)}\7-Zip\7z.exe"
 )
 $sevenZip = $sevenZipPaths | Where-Object { Test-Path $_ } | Select-Object -First 1
 
-$winRarPaths = @(
-    "$env:ProgramFiles\WinRAR\WinRAR.exe",
-    "$env:ProgramFiles(x86)\WinRAR\WinRAR.exe",
-    "$env:ProgramFiles\WinRAR\Rar.exe",
-    "$env:ProgramFiles(x86)\WinRAR\Rar.exe"
-)
-$winRar = $winRarPaths | Where-Object { Test-Path $_ } | Select-Object -First 1
-
-if (-not $sevenZip -and -not $winRar) {
+if (-not $rarCli -and -not $sevenZip) {
     Write-Host ""
     Write-Host "[ERROR] No supported archive extractor found."
-    Write-Host "This script requires either 7-Zip or WinRAR to extract the pack."
+    Write-Host "This script requires WinRAR (Rar.exe) or 7-Zip to extract the pack."
     Write-Host ""
     Write-Host "Download one of the following, install it, then run this script again:"
     Write-Host "  - 7-Zip:  https://www.7-zip.org/download.html"
-    Write-Host "  - WinRAR: https://www.win-rar.com/ or https://winrar.en.softonic.com"
+    Write-Host "  - WinRAR: https://www.win-rar.com/"
     Write-Host ""
     Read-Host "Press Enter to exit"
     exit 1
@@ -58,7 +60,6 @@ if (-not $sevenZip -and -not $winRar) {
 
 $steamPath = $null
 
-# 64-bit Windows, Steam is 32-bit app -> WOW6432Node key
 $steamRegPaths = @(
     'HKLM:\SOFTWARE\WOW6432Node\Valve\Steam',
     'HKLM:\SOFTWARE\Valve\Steam'
@@ -72,32 +73,26 @@ foreach ($regPath in $steamRegPaths) {
                 $steamPath = $installPath
                 break
             }
-        } catch {
-            # ignore and try next key
-        }
+        } catch { }
     }
 }
 
-# Fallback if registry lookup fails
 if (-not $steamPath) {
     $steamPath = "${env:ProgramFiles(x86)}\Steam"
 }
 
-# Paths and config
-$millenniumDir  = Join-Path $steamPath 'steamui\skins\Millennium'
-$packName       = 'Millennium_MUI_Pack_1.0.rar'
-$packUrl        = 'https://github.com/Mario64MUI/MUI-Files/releases/download/v1.0.0/Millennium_MUI_Pack_1.0.rar'
-$packTmp        = Join-Path $env:TEMP $packName
+$millenniumDir = Join-Path $steamPath 'steamui\skins\Millennium'
+$packName      = 'Millennium_MUI_Pack_1.0.rar'
+$packUrl       = 'https://github.com/Mario64MUI/MUI-Files/releases/download/v1.0.0/Millennium_MUI_Pack_1.0.rar'
+$packTmp       = Join-Path $env:TEMP $packName
 
 Write-Host "Detected / assumed Steam path: $steamPath"
 Write-Host "Target Millennium folder:     $millenniumDir"
 Write-Host ""
 
-# If Steam path still doesn't exist, bail out clearly
 if (-not (Test-Path $steamPath)) {
     Write-Host "[ERROR] Steam folder was not found at '$steamPath'."
     Write-Host "Steam might not be installed, or it is in a custom location."
-    Write-Host "Install Steam or edit this script to point to your Steam folder."
     Read-Host "Press Enter to exit"
     exit 1
 }
@@ -123,59 +118,75 @@ Write-Host ""
 Write-Host "Downloading Millennium MUI Pack 1.0..."
 try {
     Invoke-WebRequest -Uri $packUrl -OutFile $packTmp -UseBasicParsing
-}
-catch {
+} catch {
     Write-Host ""
     Write-Host "[ERROR] Download failed: $($_.Exception.Message)"
-    Write-Host "Check your internet connection or the download URL."
     Read-Host "Press Enter to exit"
     exit 1
 }
 
 if (-not (Test-Path -Path $packTmp)) {
-    Write-Host ""
     Write-Host "[ERROR] Download failed. Archive not found at $packTmp"
     Read-Host "Press Enter to exit"
     exit 1
 }
 
-# --------- Extract archive (7-Zip or WinRAR) ---------
+# --------- Extract archive ---------
+#
+# KEY FIX: Do NOT pre-quote paths when using & with an array.
+# PowerShell handles quoting automatically — adding your own quotes
+# causes double-quoting and WinRAR/7-Zip silently fail to find the file.
+#
+# Also: trailing backslash on the destination is required by WinRAR CLI.
 
 Write-Host ""
 Write-Host "Extracting pack into Millennium folder..."
 
-if ($sevenZip) {
+$exitCode = 0
+
+if ($rarCli) {
+    Write-Host "Using WinRAR CLI at: $rarCli"
+
+    # Destination must end with a backslash for Rar.exe / UnRAR.exe
+    $dest = "$millenniumDir\"
+
+    # Pass raw (unquoted) strings — PowerShell quotes them correctly
+    & $rarCli x -y $packTmp $dest
+    $exitCode = $LASTEXITCODE
+
+} elseif ($sevenZip) {
     Write-Host "Using 7-Zip at: $sevenZip"
-    & $sevenZip 'x' $packTmp "-o$millenniumDir" '-y'
+
+    # -o must be joined directly to the path (no space) for 7z.exe
+    & $sevenZip x $packTmp "-o$millenniumDir" -y
+    $exitCode = $LASTEXITCODE
 }
-elseif ($winRar) {
-    Write-Host "Using WinRAR at: $winRar"
 
-    $packedPath   = "`"$packTmp`""
-    $destPath     = "`"$millenniumDir`\`""
-
-    Write-Host "WinRAR archive path: $packedPath"
-    Write-Host "WinRAR destination : $destPath"
-
-    # WinRAR: x = extract with full paths, -y = assume Yes on all queries
-    $args = @(
-        'x'
-        '-y'
-        $packedPath
-        '*.*'
-        $destPath
-    )
-
-    Write-Host "WinRAR arguments   : $($args -join ' ')"
-
-    & $winRar $args
+if ($exitCode -ne 0) {
+    Write-Host ""
+    Write-Host "[ERROR] Extraction failed (exit code $exitCode)."
+    Write-Host "The archive may be corrupt. Try deleting '$packTmp' and running the script again."
+    Read-Host "Press Enter to exit"
+    exit 1
 }
+
+# Verify something was actually extracted
+$extractedItems = Get-ChildItem -Path $millenniumDir -ErrorAction SilentlyContinue
+if (-not $extractedItems) {
+    Write-Host ""
+    Write-Host "[WARNING] Extraction reported success but the Millennium folder is empty."
+    Write-Host "Please extract '$packTmp' manually into '$millenniumDir'."
+    Read-Host "Press Enter to exit"
+    exit 1
+}
+
+Write-Host "Extraction complete. $($extractedItems.Count) item(s) placed in Millennium folder."
 
 # --------- Cleanup ---------
 
 Write-Host ""
 Write-Host "Cleanup: removing temporary archive..."
-# Remove-Item -Path $packTmp -Force -ErrorAction SilentlyContinue
+Remove-Item -Path $packTmp -Force -ErrorAction SilentlyContinue
 
 # --------- Auto-start Steam ---------
 
@@ -187,7 +198,7 @@ $steamExe = Join-Path $steamPath 'steam.exe'
 if (Test-Path $steamExe) {
     Start-Process -FilePath $steamExe
 } else {
-    Write-Host "[WARNING] steam.exe was not found at '$steamExe'. Please start Steam manually."
+    Write-Host "[WARNING] steam.exe not found at '$steamExe'. Please start Steam manually."
 }
 
 Write-Host ""
